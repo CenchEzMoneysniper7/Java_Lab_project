@@ -18,214 +18,422 @@ public class SolitaireGUI extends JFrame {
     private Card draggedCard = null;
     private JLabel draggedLabel = null;
     private JPanel tableauPanel;
+    private List<Card> draggedStack = new ArrayList<>();
+    private JLabel stockCountLabel;
 
     public SolitaireGUI() {
-    setTitle("Solitaire - 單人接龍");
-    setSize(900, 600);
-    setDefaultCloseOperation(EXIT_ON_CLOSE);
-    setLocationRelativeTo(null);
+        setTitle("Solitaire - 單人接龍");
+        setSize(900, 600);
+        setDefaultCloseOperation(EXIT_ON_CLOSE);
+        setLocationRelativeTo(null);
 
-    deck = new Deck();
-    tableau = new ArrayList<>();
+        deck = new Deck();
+        tableau = new ArrayList<>();
 
-    // 初始化 7 個 tableau 堆疊
+        for (int i = 0; i < 7; i++) {
+            List<Card> pile = new ArrayList<>();
+            for (int j = 0; j <= i; j++) {
+                Card card = deck.draw();
+                if (j == i) card.flip();
+                pile.add(card);
+            }
+            tableau.add(pile);
+        }
+
+        stockPile = new Stack<>();
+        wastePile = new Stack<>();
+        for (int i = 0; i < 4; i++) {
+            foundationPiles[i] = new Stack<>();
+        }
+
+        while (!deck.isEmpty()) {
+            stockPile.push(deck.draw());
+        }
+
+        setupUI();
+    }
+    private void updateStockCount() {
+        int total = stockPile.size() + wastePile.size();
+        int open = wastePile.size();
+        stockCountLabel.setText("" + open + " / " + total);
+    }
+
+    private void setupUI() {
+        JPanel container = new JPanel(null);
+        container.setPreferredSize(new Dimension(900, 600));
+
+        stockCountLabel = new JLabel("", SwingConstants.CENTER);
+        stockCountLabel.setFont(new Font("Monospaced", Font.PLAIN, 14));
+        stockCountLabel.setBounds(20, 0, 80, 20); // 位於 stockLabel 上方
+        container.add(stockCountLabel);
+
+        stockLabel = new JLabel(CardImageLoader.getCardImage(null, null, false));
+        stockLabel.setBounds(20, 20, 80, 100);
+        stockLabel.setBorder(BorderFactory.createLineBorder(Color.BLACK));
+        stockLabel.setOpaque(true);
+        stockLabel.setBackground(Color.LIGHT_GRAY);
+        stockLabel.addMouseListener(new MouseAdapter() {
+            @Override
+            public void mouseClicked(MouseEvent e) {
+                if (SwingUtilities.isLeftMouseButton(e)) {
+                    if (!stockPile.isEmpty()) {
+                        Card card = stockPile.pop();
+                        card.flip();
+                        wastePile.push(card);
+                        wasteLabel.setIcon(CardImageLoader.getCardImage(card));
+                    } else {
+                        while (!wastePile.isEmpty()) {
+                            Card card = wastePile.pop();
+                            card.flip();
+                            stockPile.push(card);
+                        }
+                        wasteLabel.setIcon(null);
+                    }
+                } else if (SwingUtilities.isRightMouseButton(e)) {
+                    if (!wastePile.isEmpty()) {
+                        Card card = wastePile.pop();
+                        card.flip();
+                        stockPile.push(card);
+                        wasteLabel.setIcon(wastePile.isEmpty() ? null : CardImageLoader.getCardImage(wastePile.peek()));
+                    }
+                }
+                updateStockCount();
+                stockLabel.setIcon(stockPile.isEmpty() ? null : CardImageLoader.getCardImage(null, null, false));
+            }
+        });
+        container.add(stockLabel);
+
+        wasteLabel = new JLabel();
+        wasteLabel.setBounds(110, 20, 80, 100);
+        wasteLabel.setBorder(BorderFactory.createLineBorder(Color.BLACK));
+        wasteLabel.setOpaque(true);
+        wasteLabel.setBackground(Color.WHITE);
+        wasteLabel.addMouseListener(new MouseAdapter() {
+            @Override
+            public void mousePressed(MouseEvent e) {
+                if (!wastePile.isEmpty()) {
+                    draggedCard = wastePile.peek();
+                    draggedLabel = wasteLabel;
+                }
+            }
+
+            @Override
+            public void mouseReleased(MouseEvent e) {
+                Point dropPoint = e.getPoint();
+                SwingUtilities.convertPointToScreen(dropPoint, wasteLabel);
+                
+                //Foundation
+                for (int i = 0; i < foundationLabels.length; i++) {
+                    Rectangle bounds = foundationLabels[i].getBounds();
+                    Point location = foundationLabels[i].getLocationOnScreen();
+                    Rectangle screenRect = new Rectangle(location.x, location.y, bounds.width, bounds.height);
+
+                    if (screenRect.contains(dropPoint)) {
+                        if (canPlaceOnFoundation(foundationPiles[i], draggedCard)) {
+                            wastePile.pop();
+                            foundationPiles[i].push(draggedCard);
+                            foundationLabels[i].setIcon(CardImageLoader.getCardImage(draggedCard));
+                            wasteLabel.setIcon(wastePile.isEmpty() ? null : CardImageLoader.getCardImage(wastePile.peek()));
+                            updateStockCount();
+                        }
+                        draggedCard = null;
+                        draggedLabel = null;
+                        return;
+                    }
+                }
+                // tableau 的堆疊
+                for (int i = 0; i < tableau.size(); i++) {
+                    List<Card> pile = tableau.get(i);
+                    if (!pile.isEmpty()) {
+                        Component comp = getComponentAtTableau(i);
+                        if (comp != null) {
+                            Rectangle bounds = comp.getBounds();
+                            Point location = comp.getLocationOnScreen();
+                            Rectangle screenRect = new Rectangle(location.x, location.y, bounds.width, bounds.height);
+
+                            if (screenRect.contains(dropPoint)) {
+                                Card top = pile.get(pile.size() - 1);
+                                if (canPlaceOnTableau(top, draggedCard)) {
+                                    wastePile.pop();
+                                    pile.add(draggedCard);
+                                    wasteLabel.setIcon(wastePile.isEmpty() ? null : CardImageLoader.getCardImage(wastePile.peek()));
+                                    updateStockCount();
+                                    refreshUI();
+                                    draggedCard = null;
+                                    draggedLabel = null;
+                                    return;
+                                }
+                            }
+                        }
+                    }
+                }
+                //tableau 堆（只允許 K）
+                for (int i = 0; i < tableau.size(); i++) {
+                    List<Card> pile = tableau.get(i);
+                    if (pile.isEmpty()) {
+                        Component comp = getComponentAtTableau(i);
+                        if (comp != null) {
+                            Rectangle bounds = comp.getBounds();
+                            Point location = comp.getLocationOnScreen();
+                            Rectangle screenRect = new Rectangle(location.x, location.y, bounds.width, bounds.height);
+
+                            if (screenRect.contains(dropPoint)) {
+                                if (draggedCard.getRank() == Card.Rank.KING) {
+                                    wastePile.pop();
+                                    pile.add(draggedCard);
+                                    wasteLabel.setIcon(wastePile.isEmpty() ? null : CardImageLoader.getCardImage(wastePile.peek()));
+                                    refreshUI();
+                                    draggedCard = null;
+                                    draggedLabel = null;
+                                    return;
+                                }
+                            }
+                        }
+                    }
+                }
+                draggedCard = null;
+                draggedLabel = null;
+            }
+        });
+        container.add(wasteLabel);
+
+        for (int i = 0; i < 4; i++) {
+            JLabel foundationLabel = new JLabel();
+            foundationLabel.setBounds(220 + i * 100, 20, 80, 100);
+            foundationLabel.setBorder(BorderFactory.createLineBorder(Color.BLACK));
+            foundationLabel.setOpaque(true);
+            foundationLabel.setBackground(Color.WHITE);
+
+            final int index = i;
+            foundationLabel.addMouseListener(new MouseAdapter() {
+                @Override
+                public void mouseReleased(MouseEvent e) {
+                    if (draggedCard == null || draggedLabel == null) return;
+
+                    Stack<Card> foundation = foundationPiles[index];
+
+                    if (canPlaceOnFoundation(foundation, draggedCard)) {
+                        wastePile.pop();
+                        foundation.push(draggedCard);
+                        foundationLabels[index].setIcon(CardImageLoader.getCardImage(draggedCard));
+                        wasteLabel.setIcon(wastePile.isEmpty() ? null : CardImageLoader.getCardImage(wastePile.peek()));
+                    }
+
+                    draggedCard = null;
+                    draggedLabel = null;
+                }
+            });
+
+            foundationLabels[i] = foundationLabel;
+            container.add(foundationLabel);
+        }
+
+        tableauPanel = new JPanel(null);
+        tableauPanel.setBounds(0, 150, 900, 450);
+        container.add(tableauPanel);
+
+        int pileSpacing = 120;
+        int cardOffsetY = 30;
+
+        for (int i = 0; i < tableau.size(); i++) {
+            List<Card> pile = tableau.get(i);
+            JLayeredPane pilePane = new JLayeredPane();
+            pilePane.setBounds(i * pileSpacing + 20, 0, 100, 400);
+
+            for (int j = 0; j < pile.size(); j++) {
+                Card card = pile.get(j);
+                JLabel cardLabel = new JLabel(CardImageLoader.getCardImage(card));
+                cardLabel.setOpaque(true);
+                cardLabel.setBackground(Color.WHITE);
+                cardLabel.setBounds(0, j * cardOffsetY, 80, 100);
+                cardLabel.setBorder(BorderFactory.createLineBorder(Color.BLACK));
+
+                if (card.isFaceUp()) {
+                    cardLabel.addMouseListener(new MouseAdapter() {
+                        @Override
+                        public void mousePressed(MouseEvent e) {
+                            draggedCard = card;
+                            draggedLabel = cardLabel;
+                            draggedStack.clear();
+
+                            // 找到此牌所在堆與位置
+                            for (List<Card> pile : tableau) {
+                                int index = pile.indexOf(card);
+                                if (index != -1) {
+                                    // 將 index 之後的所有牌加入 draggedStack
+                                    draggedStack.addAll(pile.subList(index, pile.size()));
+                                    break;
+                                }
+                            }
+                        }
+
+                        @Override
+                        public void mouseReleased(MouseEvent e) {
+                            handleTableauStackDrop(cardLabel);
+                            draggedCard = null;
+                            draggedLabel = null;
+                            draggedStack.clear();
+                        }
+                    });
+                }
+
+
+                pilePane.add(cardLabel, Integer.valueOf(j));
+            }
+
+            tableauPanel.add(pilePane);
+        }
+
+        add(container);
+        JButton restartButton = new JButton("重新開始");
+        restartButton.setBounds(750, 20, 120, 30); // 放右上角
+        container.add(restartButton);
+
+        restartButton.addActionListener(e -> {
+            int result = JOptionPane.showConfirmDialog(this,
+                    "確定要重新開始嗎？", "重新遊戲",
+                    JOptionPane.YES_NO_OPTION, JOptionPane.QUESTION_MESSAGE);
+            if (result == JOptionPane.YES_OPTION) {
+                restartGame();
+            }
+        });
+
+    }
+private void restartGame() {
+    getContentPane().removeAll();
+
+    // Reset UI & internal state
+    draggedCard = null;
+    draggedLabel = null;
+    draggedStack.clear();
+
+    // Reset foundation piles
+    for (int i = 0; i < 4; i++) {
+        foundationPiles[i].clear();
+    }
+
+    // Clear all piles
+    wastePile.clear();
+    stockPile.clear();
+    tableau.clear();
+
+    // 重建牌組並洗牌
+    deck.reset();
+
+    // 建立新的 tableau
     for (int i = 0; i < 7; i++) {
         List<Card> pile = new ArrayList<>();
         for (int j = 0; j <= i; j++) {
             Card card = deck.draw();
-            if (j == i) card.flip(); // 最上面那張翻面
+            if (j == i) card.flip(); // 最上面的翻面
             pile.add(card);
         }
         tableau.add(pile);
     }
 
-    stockPile = new Stack<>();
-    wastePile = new Stack<>();
-    for (int i = 0; i < 4; i++) {
-        foundationPiles[i] = new Stack<>();
-    }
-
-
+    // 剩下的牌放入 stock
     while (!deck.isEmpty()) {
         stockPile.push(deck.draw());
     }
 
-    setupUI(); // 建立圖形介面
+    // 重建 UI
+    setupUI();
+    revalidate();
+    repaint();
 }
 
-    private void setupUI() {
-        
-    JPanel container = new JPanel(null);
-    container.setPreferredSize(new Dimension(900, 600));
 
-    // === Stock ===
-    stockLabel = new JLabel("🂠", SwingConstants.CENTER);
-    stockLabel.setFont(new Font("Monospaced", Font.BOLD, 24));
-    stockLabel.setBounds(20, 20, 80, 100);
-    stockLabel.setBorder(BorderFactory.createLineBorder(Color.BLACK));
-    stockLabel.setOpaque(true);
-    stockLabel.setBackground(Color.LIGHT_GRAY);
-    stockLabel.addMouseListener(new MouseAdapter() {
-    @Override
-    public void mouseClicked(MouseEvent e) {
-        if (SwingUtilities.isLeftMouseButton(e)) {
-            // 👉 左鍵：抽下一張（原本邏輯）
-            if (!stockPile.isEmpty()) {
-                Card card = stockPile.pop();
-                card.flip();
-                wastePile.push(card);
-                wasteLabel.setText(card.toDisplayString());
-            } else {
-                // 若 stock 空了，把 waste 全部翻回來（Reset）
-                while (!wastePile.isEmpty()) {
-                    Card card = wastePile.pop();
-                    card.flip();
-                    stockPile.push(card);
-                }
-                wasteLabel.setText("");
-            }
-        } else if (SwingUtilities.isRightMouseButton(e)) {
-            // 👈 右鍵：回上一張
-            if (!wastePile.isEmpty()) {
-                Card card = wastePile.pop();
-                card.flip();
-                stockPile.push(card);
-                wasteLabel.setText(wastePile.isEmpty() ? "" : wastePile.peek().toDisplayString());
-            }
-        }
+private void handleTableauStackDrop(JLabel label) {
+    if (draggedStack.isEmpty()) return;
+    Point dropPoint = MouseInfo.getPointerInfo().getLocation();
 
-        // 更新 stock 顯示符號
-        stockLabel.setText(stockPile.isEmpty() ? "" : "🂠");
-    }
-});
+    // ✅ Step 1: 嘗試拖到 Foundation
+    if (draggedStack.size() == 1) { // 只能單張放上 foundation
+        Card card = draggedStack.get(0);
 
-    container.add(stockLabel);
-
-    // === Waste ===
-    wasteLabel = new JLabel("", SwingConstants.CENTER);
-    wasteLabel.setFont(new Font("Monospaced", Font.BOLD, 24));
-    wasteLabel.setBounds(110, 20, 80, 100);
-    wasteLabel.setBorder(BorderFactory.createLineBorder(Color.BLACK));
-    wasteLabel.setOpaque(true);
-    wasteLabel.setBackground(Color.WHITE);
-    wasteLabel.addMouseListener(new MouseAdapter() {
-    @Override
-    public void mousePressed(MouseEvent e) {
-        if (!wastePile.isEmpty()) {
-            draggedCard = wastePile.peek();
-            draggedLabel = wasteLabel;
-        }
-    }
-
-    @Override
-    public void mouseReleased(MouseEvent e) {
-        Point dropPoint = e.getPoint();
-        SwingUtilities.convertPointToScreen(dropPoint, wasteLabel);
-
-        for (int i = 0; i < foundationLabels.length; i++) {
+        for (int i = 0; i < 4; i++) {
             Rectangle bounds = foundationLabels[i].getBounds();
             Point location = foundationLabels[i].getLocationOnScreen();
             Rectangle screenRect = new Rectangle(location.x, location.y, bounds.width, bounds.height);
 
             if (screenRect.contains(dropPoint)) {
-                if (canPlaceOnFoundation(foundationPiles[i], draggedCard)) {
-                    wastePile.pop();
-                    foundationPiles[i].push(draggedCard);
-                    foundationLabels[i].setText(draggedCard.toDisplayString());
-                    wasteLabel.setText(wastePile.isEmpty() ? "" : wastePile.peek().toDisplayString());
+                if (canPlaceOnFoundation(foundationPiles[i], card)) {
+                    removeCardsFromTableau(draggedStack);
+                    foundationPiles[i].push(card);
+                    foundationLabels[i].setIcon(CardImageLoader.getCardImage(card));
+                    foundationLabels[i].setOpaque(true);
+                    foundationLabels[i].setBackground(Color.WHITE);
+                    refreshUI();
+                    return;
                 }
-                break;
             }
         }
-
-        draggedCard = null;
-        draggedLabel = null;
     }
-});
 
-    container.add(wasteLabel);
-    // === Foundation 4 格 ===
-    for (int i = 0; i < 4; i++) {
-        JLabel foundationLabel = new JLabel("", SwingConstants.CENTER);
-        foundationLabel.setFont(new Font("Monospaced", Font.BOLD, 24));
-        foundationLabel.setBounds(220 + i * 100, 20, 80, 100);
-        foundationLabel.setBorder(BorderFactory.createLineBorder(Color.BLACK));
-        foundationLabel.setOpaque(true);
-        foundationLabel.setBackground(Color.WHITE);
+    // ✅ Step 2: 拖到 Tableau（原本的邏輯）
+    for (int i = 0; i < tableau.size(); i++) {
+        List<Card> pile = tableau.get(i);
+        if (pile.isEmpty()) continue;
 
-        final int index = i; // for use inside lambda/mouse listener
-        foundationLabel.addMouseListener(new MouseAdapter() {
-            @Override
-            public void mouseReleased(MouseEvent e) {
-                if (draggedCard == null || draggedLabel == null) return;
+        Component comp = getComponentAtTableau(i);
+        if (comp != null) {
+            Rectangle bounds = comp.getBounds();
+            Point location = comp.getLocationOnScreen();
+            Rectangle screenRect = new Rectangle(location.x, location.y, bounds.width, bounds.height);
 
-                Stack<Card> foundation = foundationPiles[index];
+            if (screenRect.contains(dropPoint)) {
+                Card target = pile.get(pile.size() - 1);
+                Card moving = draggedStack.get(0);
 
-                if (canPlaceOnFoundation(foundation, draggedCard)) {
-                    wastePile.pop();
-                    foundation.push(draggedCard);
-                    foundationLabels[index].setText(draggedCard.toDisplayString());
-                    wasteLabel.setText(wastePile.isEmpty() ? "" : wastePile.peek().toDisplayString());
+                if (canPlaceOnTableau(target, moving)) {
+                    removeCardsFromTableau(draggedStack);
+                    pile.addAll(draggedStack);
+                    refreshUI();
+                    return;
                 }
-                
-
-                draggedCard = null;
-                draggedLabel = null;
             }
-        });
-
-        foundationLabels[i] = foundationLabel;
-        container.add(foundationLabel);
-    }
-
-    // === Tableau 堆疊 ===
-    int pileSpacing = 120;
-    int cardOffsetY = 30;
-
-    // 放在 tableau 迴圈「之前」執行一次
-tableauPanel = new JPanel(null);
-tableauPanel.setBounds(0, 150, 900, 450); // 下半部
-container.add(tableauPanel);
-
-for (int i = 0; i < tableau.size(); i++) {
-    List<Card> pile = tableau.get(i);
-    JLayeredPane pilePane = new JLayeredPane();
-    pilePane.setBounds(i * pileSpacing + 20, 0, 100, 400);
-
-    for (int j = 0; j < pile.size(); j++) {
-        Card card = pile.get(j);
-        JLabel cardLabel = new JLabel(card.toDisplayString(), SwingConstants.CENTER);
-        cardLabel.setOpaque(true);
-        cardLabel.setBackground(Color.WHITE);
-        cardLabel.setBorder(BorderFactory.createLineBorder(Color.BLACK));
-        cardLabel.setBounds(0, j * cardOffsetY, 80, 100);
-        cardLabel.setFont(new Font("Monospaced", Font.BOLD, 16));
-        pilePane.add(cardLabel, Integer.valueOf(j));
-
-        if (card.isFaceUp() && j == pile.size() - 1) {
-            cardLabel.addMouseListener(new MouseAdapter() {
-                @Override
-                public void mousePressed(MouseEvent e) {
-                    draggedCard = card;
-                    draggedLabel = cardLabel;
-                }
-
-                @Override
-                public void mouseReleased(MouseEvent e) {
-                    handleTableauCardDrop(card, cardLabel);
-                    draggedCard = null;
-                    draggedLabel = null;
-                }
-            });
         }
     }
 
-    tableauPanel.add(pilePane); // ✅ 放到 tableauPanel 中
+    // ✅ Step 3: 拖到空堆（補充可選功能）
+    for (int i = 0; i < tableau.size(); i++) {
+        List<Card> pile = tableau.get(i);
+        if (pile.isEmpty()) {
+            Component comp = getComponentAtTableau(i);
+            if (comp != null) {
+                Rectangle bounds = comp.getBounds();
+                Point location = comp.getLocationOnScreen();
+                Rectangle screenRect = new Rectangle(location.x, location.y, bounds.width, bounds.height);
+
+                if (screenRect.contains(dropPoint)) {
+                    // 只允許 K 開頭的堆疊放入空堆
+                    Card top = draggedStack.get(0);
+                    if (top.getRank() == Card.Rank.KING) {
+                        removeCardsFromTableau(draggedStack);
+                        tableau.get(i).addAll(draggedStack);
+                        refreshUI();
+                        return;
+                    }
+                }
+            }
+        }
+    }
 }
 
-    
-    add(container);
+private void removeCardsFromTableau(List<Card> cards) {
+    Card first = cards.get(0);
+    for (List<Card> pile : tableau) {
+        int index = pile.indexOf(first);
+        if (index != -1) {
+            pile.subList(index, pile.size()).clear();
+            if (!pile.isEmpty() && !pile.get(pile.size() - 1).isFaceUp()) {
+                pile.get(pile.size() - 1).flip();
+            }
+            return;
+        }
+    }
 }
+
 private void moveWasteToFoundation(int index) {
     if (wastePile.isEmpty()) return;
 
@@ -235,7 +443,9 @@ private void moveWasteToFoundation(int index) {
     if (canPlaceOnFoundation(foundation, card)) {
         wastePile.pop();
         foundation.push(card);
-        foundationLabels[index].setText(card.toDisplayString());
+        foundationLabels[index].setIcon(CardImageLoader.getCardImage(card));
+        foundationLabels[index].setOpaque(true);
+        foundationLabels[index].setBackground(Color.WHITE);
         wasteLabel.setText(wastePile.isEmpty() ? "" : wastePile.peek().toDisplayString());
     }
 }
@@ -252,11 +462,12 @@ private void handleTableauCardDrop(Card card, JLabel label) {
 
         if (screenRect.contains(dropPoint)) {
             if (canPlaceOnFoundation(foundationPiles[i], card)) {
-                // 將牌從原 tableau 拿掉並加入 foundation
                 removeCardFromTableau(card);
                 foundationPiles[i].push(card);
-                foundationLabels[i].setText(card.toDisplayString());
-                label.setVisible(false); // 隱藏原本 JLabel
+                foundationLabels[i].setIcon(CardImageLoader.getCardImage(card)); 
+                foundationLabels[i].setOpaque(true); 
+                foundationLabels[i].setBackground(Color.WHITE);
+                label.setVisible(false);
                 return;
             }
         }
@@ -317,30 +528,40 @@ private void refreshUI() {
 
         for (int j = 0; j < pile.size(); j++) {
             Card card = pile.get(j);
-            JLabel cardLabel = new JLabel(card.toDisplayString(), SwingConstants.CENTER);
+            JLabel cardLabel = new JLabel(CardImageLoader.getCardImage(card));
             cardLabel.setOpaque(true);
             cardLabel.setBackground(Color.WHITE);
             cardLabel.setBorder(BorderFactory.createLineBorder(Color.BLACK));
             cardLabel.setBounds(0, j * cardOffsetY, 80, 100);
-            cardLabel.setFont(new Font("Monospaced", Font.BOLD, 16));
             pilePane.add(cardLabel, Integer.valueOf(j));
 
-            if (card.isFaceUp() && j == pile.size() - 1) {
+            if (card.isFaceUp()) {
                 cardLabel.addMouseListener(new MouseAdapter() {
                     @Override
                     public void mousePressed(MouseEvent e) {
                         draggedCard = card;
                         draggedLabel = cardLabel;
+                        draggedStack.clear();
+
+                        for (List<Card> p : tableau) {
+                            int idx = p.indexOf(card);
+                            if (idx != -1) {
+                                draggedStack.addAll(p.subList(idx, p.size()));
+                                break;
+                            }
+                        }
                     }
 
                     @Override
                     public void mouseReleased(MouseEvent e) {
-                        handleTableauCardDrop(card, cardLabel);
+                        handleTableauStackDrop(cardLabel);
                         draggedCard = null;
                         draggedLabel = null;
+                        draggedStack.clear();
                     }
                 });
             }
+
         }
 
         tableauPanel.add(pilePane);
@@ -348,13 +569,39 @@ private void refreshUI() {
 
     tableauPanel.revalidate();
     tableauPanel.repaint();
+    checkGameWin();
 }
 
+private void checkGameWin() {
+    boolean allComplete = true;
+    for (Stack<Card> pile : foundationPiles) {
+        if (pile.size() < 13) {
+            allComplete = false;
+            break;
+        }
+    }
+
+    if (allComplete) {
+        int choice = JOptionPane.showOptionDialog(this,
+                "恭喜！你完成了遊戲！\n是否要重新開始？",
+                "遊戲結束",
+                JOptionPane.YES_NO_OPTION,
+                JOptionPane.INFORMATION_MESSAGE,
+                null,
+                new Object[]{"重新開始", "退出"},
+                "重新開始");
+
+        if (choice == JOptionPane.YES_OPTION) {
+            restartGame();
+        } else {
+            System.exit(0);
+        }
+    }
+}
 
 private Component getComponentAtTableau(int index) {
-    // 可以記住每個 pilePane 或用 container.getComponent(index)
-    // 或直接用 foundationLabels[i] 的方式來找 tableau 顯示的位置
-    return null; // 你可以自行補實作方式
+    if (tableauPanel.getComponentCount() <= index) return null;
+    return tableauPanel.getComponent(index);
 }
 
 private boolean canPlaceOnTableau(Card target, Card dragged) {
