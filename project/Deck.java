@@ -25,4 +25,14 @@ public class Deck {
     public boolean isEmpty() {
         return cards.isEmpty();
     }
+    public void reset() {
+    cards.clear();
+    for (Card.Suit suit : Card.Suit.values()) {
+        for (Card.Rank rank : Card.Rank.values()) {
+            cards.add(new Card(suit, rank));
+        }
+    }
+    Collections.shuffle(cards);
+}
+
 }
