@@ -379,6 +379,7 @@ public class SolitaireGUI extends JFrame {
             String rules = """
                 單人接龍規則說明：
 
+                - 在左上角牌庫點擊左右鍵可以翻牌
                 - 將所有牌依花色由 A 至 K 排到上方 4 個方格中。
                 - 牌堆中的牌可以紅黑交錯遞減放置。
                 -  K 可以拖移到牌堆中的空白欄位。
